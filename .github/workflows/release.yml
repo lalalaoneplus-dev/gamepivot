@@ -1,0 +1,150 @@
+name: Build Windows installer
+
+'on':
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Read project version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $project = [xml](Get-Content -LiteralPath 'GamePivot.csproj' -Raw)
+          $version = [string]$project.Project.PropertyGroup.Version
+          if ([string]::IsNullOrWhiteSpace($version)) { throw 'Project version is missing.' }
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "APP_VERSION=$version"
+
+      - name: Check release tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expectedTag = "v$env:APP_VERSION"
+          if ($env:GITHUB_REF_NAME -cne $expectedTag) {
+            throw "Release tag '$env:GITHUB_REF_NAME' must equal '$expectedTag'."
+          }
+
+      - name: Publish Windows executable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet publish GamePivot.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+          if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE." }
+          $publishedExe = Join-Path 'publish' 'GamePivot.exe'
+          if (-not (Test-Path -LiteralPath $publishedExe -PathType Leaf)) { throw 'Published executable is missing.' }
+          if (-not (Test-Path -LiteralPath 'publish/rules.json' -PathType Leaf)) { throw 'Published rules.json is missing.' }
+          New-Item -ItemType Directory -Path 'dist' -Force | Out-Null
+          Copy-Item -LiteralPath $publishedExe -Destination "dist/GamePivot-$env:APP_VERSION-win-x64.exe"
+
+      - name: Smoke test published executable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = (Resolve-Path -LiteralPath 'publish/GamePivot.exe').Path
+          $output = Join-Path $env:RUNNER_TEMP 'gamepivot-published-smoke.json'
+          Remove-Item -LiteralPath $output -ErrorAction SilentlyContinue
+          $arguments = "--diagnose 393080 --output `"$output`""
+          $process = Start-Process -FilePath $exe -ArgumentList $arguments -Wait -PassThru
+          if ($process.ExitCode -ne 1) { throw "Published CLI exited with $($process.ExitCode); expected 1." }
+          if (-not (Test-Path -LiteralPath $output -PathType Leaf)) { throw 'Published CLI did not write its report.' }
+          $report = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
+          if ($report.type -cne 'InvalidOperationException' -or $report.error -cne 'Steam app 393080 is not installed.') {
+            throw 'Published CLI report did not match the missing-Steam result.'
+          }
+
+      - name: Compile Inno Setup installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $isccCommand = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          $iscc = if ($isccCommand) { $isccCommand.Source } else { $null }
+          $defaultIscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          if (-not $iscc -and (Test-Path -LiteralPath $defaultIscc -PathType Leaf)) { $iscc = $defaultIscc }
+          if (-not $iscc) {
+            choco install innosetup -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "Chocolatey failed with exit code $LASTEXITCODE." }
+            if (-not (Test-Path -LiteralPath $defaultIscc -PathType Leaf)) { throw 'ISCC.exe was not found after installation.' }
+            $iscc = $defaultIscc
+          }
+          & $iscc "/DAppVersion=$env:APP_VERSION" 'installer/GamePivot.iss'
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE." }
+          if (-not (Test-Path -LiteralPath "dist/GamePivot-Setup-$env:APP_VERSION.exe" -PathType Leaf)) {
+            throw 'Installer executable is missing.'
+          }
+
+      - name: Install and uninstall test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = (Resolve-Path -LiteralPath "dist/GamePivot-Setup-$env:APP_VERSION.exe").Path
+          $installDir = Join-Path $env:LOCALAPPDATA 'Programs/GamePivot'
+          $install = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /CURRENTUSER /NORESTART' -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Installer exited with $($install.ExitCode)." }
+          $exe = Join-Path $installDir 'GamePivot.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Installed executable is missing.' }
+          if (-not (Test-Path -LiteralPath (Join-Path $installDir 'rules.json') -PathType Leaf)) { throw 'Installed rules.json is missing.' }
+          $output = Join-Path $env:RUNNER_TEMP 'gamepivot-installed-smoke.json'
+          Remove-Item -LiteralPath $output -ErrorAction SilentlyContinue
+          $arguments = "--diagnose 393080 --output `"$output`""
+          $process = Start-Process -FilePath $exe -ArgumentList $arguments -Wait -PassThru
+          if ($process.ExitCode -ne 1) { throw "Installed CLI exited with $($process.ExitCode); expected 1." }
+          if (-not (Test-Path -LiteralPath $output -PathType Leaf)) { throw 'Installed CLI did not write its report.' }
+          $report = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
+          if ($report.type -cne 'InvalidOperationException' -or $report.error -cne 'Steam app 393080 is not installed.') {
+            throw 'Installed CLI report did not match the missing-Steam result.'
+          }
+          $uninstaller = Join-Path $installDir 'unins000.exe'
+          if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) { throw 'Uninstaller is missing.' }
+          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) { throw "Uninstaller exited with $($uninstall.ExitCode)." }
+          for ($attempt = 0; $attempt -lt 30 -and (Test-Path -LiteralPath $installDir); $attempt++) {
+            Start-Sleep -Seconds 1
+          }
+          if (Test-Path -LiteralPath $installDir) { throw 'Installation folder remains after uninstall.' }
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: GamePivot-${{ env.APP_VERSION }}-windows
+          path: |
+            dist/GamePivot-Setup-${{ env.APP_VERSION }}.exe
+            dist/GamePivot-${{ env.APP_VERSION }}-win-x64.exe
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $readme = Get-Content -LiteralPath 'README.md'
+          $featureHeader = [Array]::IndexOf($readme, 'Features:')
+          if ($featureHeader -lt 0) { throw 'README feature list is missing.' }
+          $features = @()
+          for ($i = $featureHeader + 1; $i -lt $readme.Count; $i++) {
+            if ($readme[$i] -match '^- ') { $features += $readme[$i] }
+            elseif ($features.Count -gt 0) { break }
+          }
+          if ($features.Count -lt 4) { throw 'README feature list is too short.' }
+          $notes = @('GamePivot diagnoses and guides repairs for Steam games on Windows.', '', 'Highlights:') + ($features | Select-Object -First 4)
+          $notesPath = Join-Path $env:RUNNER_TEMP 'gamepivot-release-notes.md'
+          Set-Content -LiteralPath $notesPath -Value $notes -Encoding utf8
+          gh release create $env:GITHUB_REF_NAME "dist/GamePivot-Setup-$env:APP_VERSION.exe" "dist/GamePivot-$env:APP_VERSION-win-x64.exe" --title "GamePivot $env:APP_VERSION" --notes-file $notesPath
+          if ($LASTEXITCODE -ne 0) { throw "GitHub release creation failed with exit code $LASTEXITCODE." }

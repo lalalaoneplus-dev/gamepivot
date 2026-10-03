@@ -2,7 +2,11 @@
 
 GamePivot is a Windows diagnostic and guided-repair tool for older Steam games.
 
-It currently:
+## Install
+
+Download [GamePivot-Setup](https://github.com/lalalaoneplus-dev/gamepivot/releases/latest) and run it on Windows.
+
+Features:
 
 - discovers installed games across all configured Steam libraries;
 - parses each top-level executable's PE import table;
