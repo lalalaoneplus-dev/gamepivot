@@ -1,0 +1,27 @@
+[
+  {
+    "appId": "393080",
+    "companionAppId": "393100",
+    "companionName": "Call of Duty: Modern Warfare Remastered - Multiplayer",
+    "requiredSharedDepots": [
+      "393103",
+      "393117"
+    ],
+    "languageSharedDepots": {
+      "english": "393104",
+      "french": "393105",
+      "italian": "393106",
+      "german": "393107",
+      "spanish": "393108",
+      "russian": "393109",
+      "polish": "393110",
+      "japanese": "393111",
+      "koreana": "393112",
+      "schinese": "393113",
+      "tchinese": "393114",
+      "arabic": "393115",
+      "brazilian": "393116"
+    },
+    "explanation": "The single-player app uses shared depots owned by the companion multiplayer app. This manifest contains only the single-player depots, so AMD AGS, Bink, Steam API, shared image files, and other common content are absent."
+  }
+]

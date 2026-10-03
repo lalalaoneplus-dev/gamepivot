@@ -1,0 +1,322 @@
+<Window x:Class="GamePivot.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="GamePivot"
+        Width="1180"
+        Height="780"
+        MinWidth="960"
+        MinHeight="640"
+        WindowStartupLocation="CenterScreen"
+        Loaded="Window_Loaded">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="76"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="38"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="#0E1527" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+            <Grid Margin="24,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock FontSize="25" FontWeight="Bold">
+                        <Run Text="Game"/>
+                        <Run Text="Pivot" Foreground="{StaticResource AccentBrush}"/>
+                    </TextBlock>
+                    <TextBlock Text="Find the real failure. Repair through the official source."
+                               Foreground="{StaticResource MutedBrush}"
+                               FontSize="12"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="Refresh library"
+                            Click="RefreshButton_Click"
+                            Style="{StaticResource SecondaryButton}"
+                            Margin="0,0,10,0"/>
+                    <Button x:Name="ScanButton"
+                            Content="Diagnose selected game"
+                            Click="ScanButton_Click"
+                            Style="{StaticResource PrimaryButton}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="330"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    Background="{StaticResource PanelBrush}"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="0,0,1,0">
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="Steam library"
+                               FontSize="17"
+                               FontWeight="SemiBold"
+                               Margin="4,0,0,12"/>
+                    <TextBox x:Name="SearchBox"
+                             Grid.Row="1"
+                             TextChanged="SearchBox_TextChanged"
+                             Background="#0D1425"
+                             Foreground="{StaticResource TextBrush}"
+                             BorderBrush="{StaticResource BorderBrush}"
+                             Padding="12,9"
+                             Margin="0,0,0,10"
+                             ToolTip="Filter installed games"/>
+                    <ListBox x:Name="GameList"
+                             Grid.Row="2"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             SelectionChanged="GameList_SelectionChanged"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Name}"
+                                               FontWeight="SemiBold"
+                                               TextWrapping="Wrap"/>
+                                    <TextBlock FontSize="11"
+                                               Foreground="{StaticResource MutedBrush}">
+                                        <Run Text="Steam "/>
+                                        <Run Text="{Binding AppId}"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Border>
+
+            <ScrollViewer Grid.Column="1"
+                          Background="{StaticResource WindowBrush}"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="26">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock x:Name="GameNameText"
+                                       Text="Select a Steam game"
+                                       FontSize="27"
+                                       FontWeight="Bold"
+                                       TextWrapping="Wrap"/>
+                            <TextBlock x:Name="GamePathText"
+                                       Foreground="{StaticResource MutedBrush}"
+                                       Margin="0,5,0,0"
+                                       TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <Border x:Name="StatusBadge"
+                                Grid.Column="1"
+                                Background="#25324D"
+                                CornerRadius="14"
+                                Padding="13,7"
+                                VerticalAlignment="Top">
+                            <TextBlock x:Name="StatusText"
+                                       Text="NOT SCANNED"
+                                       FontWeight="Bold"
+                                       FontSize="11"/>
+                        </Border>
+                    </Grid>
+
+                    <ProgressBar x:Name="ScanProgress"
+                                 Height="3"
+                                 Margin="0,18,0,0"
+                                 IsIndeterminate="True"
+                                 Visibility="Collapsed"
+                                 Foreground="{StaticResource AccentBrush}"
+                                 Background="#25324D"/>
+
+                    <Border Background="{StaticResource CardBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="20"
+                            Margin="0,18,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Diagnosis" FontSize="13" Foreground="{StaticResource MutedBrush}"/>
+                            <TextBlock x:Name="SummaryText"
+                                       Text="Choose a game and run a diagnosis."
+                                       FontSize="18"
+                                       FontWeight="SemiBold"
+                                       TextWrapping="Wrap"
+                                       Margin="0,8,0,0"/>
+                            <TextBlock x:Name="RecommendationText"
+                                       Foreground="{StaticResource AccentBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,12,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Grid Margin="0,16,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="16"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0"
+                                Background="{StaticResource CardBrush}"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Padding="20">
+                            <StackPanel>
+                                <TextBlock Text="Missing dependencies"
+                                           FontSize="15"
+                                           FontWeight="SemiBold"/>
+                                <ItemsControl x:Name="MissingDependenciesList" Margin="0,12,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="#271D2B"
+                                                    BorderBrush="#5B3341"
+                                                    BorderThickness="1"
+                                                    CornerRadius="6"
+                                                    Padding="9,6"
+                                                    Margin="0,0,0,6">
+                                                <TextBlock Text="{Binding}"
+                                                           Foreground="#FFB4BC"
+                                                           FontFamily="Cascadia Mono"/>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock x:Name="NoMissingText"
+                                           Text="No missing imported DLLs found."
+                                           Foreground="{StaticResource MutedBrush}"
+                                           Margin="0,12,0,0"
+                                           Visibility="Collapsed"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Column="2"
+                                Background="{StaticResource CardBrush}"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Padding="20">
+                            <StackPanel>
+                                <TextBlock Text="Findings"
+                                           FontSize="15"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock x:Name="FindingsText"
+                                           Foreground="{StaticResource MutedBrush}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,12,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+
+                    <Border Background="{StaticResource CardBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="20"
+                            Margin="0,16,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Safe repair actions"
+                                       FontSize="15"
+                                       FontWeight="SemiBold"/>
+                            <TextBlock Text="GamePivot delegates downloads to Steam or Microsoft. It never fetches standalone DLL files."
+                                       Foreground="{StaticResource MutedBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,5,0,14"/>
+                            <WrapPanel>
+                                <Button x:Name="InstallCompanionButton"
+                                        Content="Install required Steam component"
+                                        Click="InstallCompanionButton_Click"
+                                        Style="{StaticResource PrimaryButton}"
+                                        IsEnabled="False"
+                                        Margin="0,0,10,10"/>
+                                <Button x:Name="VerifyButton"
+                                        Content="Verify in Steam"
+                                        Click="VerifyButton_Click"
+                                        Style="{StaticResource SecondaryButton}"
+                                        IsEnabled="False"
+                                        Margin="0,0,10,10"/>
+                                <Button x:Name="SteamHelpButton"
+                                        Content="Steam account help"
+                                        Click="SteamHelpButton_Click"
+                                        Style="{StaticResource SecondaryButton}"
+                                        IsEnabled="False"
+                                        Margin="0,0,10,10"/>
+                                <Button x:Name="LaunchButton"
+                                        Content="Launch through Steam"
+                                        Click="LaunchButton_Click"
+                                        Style="{StaticResource SecondaryButton}"
+                                        IsEnabled="False"
+                                        Margin="0,0,10,10"/>
+                                <Button x:Name="OpenFolderButton"
+                                        Content="Open game folder"
+                                        Click="OpenFolderButton_Click"
+                                        Style="{StaticResource SecondaryButton}"
+                                        IsEnabled="False"
+                                        Margin="0,0,10,10"/>
+                                <Button x:Name="ExportButton"
+                                        Content="Export report"
+                                        Click="ExportButton_Click"
+                                        Style="{StaticResource SecondaryButton}"
+                                        IsEnabled="False"
+                                        Margin="0,0,10,10"/>
+                            </WrapPanel>
+                            <Separator Background="{StaticResource BorderBrush}" Margin="0,6,0,14"/>
+                            <WrapPanel>
+                                <Button Content="Microsoft VC++ x64"
+                                        Click="VcRuntimeButton_Click"
+                                        Style="{StaticResource SecondaryButton}"
+                                        Margin="0,0,10,0"/>
+                                <Button Content="Microsoft Legacy DirectX"
+                                        Click="DirectXButton_Click"
+                                        Style="{StaticResource SecondaryButton}"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Expander Header="Technical evidence"
+                              Foreground="{StaticResource TextBrush}"
+                              Margin="0,16,0,18">
+                        <TextBox x:Name="EvidenceText"
+                                 Background="#080D19"
+                                 Foreground="#BEC9DB"
+                                 BorderBrush="{StaticResource BorderBrush}"
+                                 BorderThickness="1"
+                                 IsReadOnly="True"
+                                 TextWrapping="Wrap"
+                                 AcceptsReturn="True"
+                                 FontFamily="Cascadia Mono"
+                                 FontSize="11"
+                                 Padding="14"
+                                 MinHeight="140"
+                                 VerticalScrollBarVisibility="Auto"/>
+                    </Expander>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <Border Grid.Row="2"
+                Background="#0E1527"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,1,0,0">
+            <Grid Margin="22,0">
+                <TextBlock x:Name="FooterText"
+                           Text="Ready"
+                           Foreground="{StaticResource MutedBrush}"
+                           VerticalAlignment="Center"/>
+                <TextBlock Text="GamePivot MVP 0.1"
+                           Foreground="{StaticResource MutedBrush}"
+                           HorizontalAlignment="Right"
+                           VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

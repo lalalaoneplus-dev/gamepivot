@@ -1,0 +1,18 @@
+bin/
+obj/
+dist/
+out/
+*.zip
+*.msi
+diagnosis-*.json
+gamepivot-ui*.png
+
+# Published app folder (regenerable)
+GamePivot-MVP-*/
+
+# Visual Studio / OS
+.vs/
+*.user
+.DS_Store
+Thumbs.db
+desktop.ini
