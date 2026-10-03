@@ -49,23 +49,48 @@ jobs:
           $publishedExe = Join-Path 'publish' 'GamePivot.exe'
           if (-not (Test-Path -LiteralPath $publishedExe -PathType Leaf)) { throw 'Published executable is missing.' }
           if (-not (Test-Path -LiteralPath 'publish/rules.json' -PathType Leaf)) { throw 'Published rules.json is missing.' }
-          New-Item -ItemType Directory -Path 'dist' -Force | Out-Null
-          Copy-Item -LiteralPath $publishedExe -Destination "dist/GamePivot-$env:APP_VERSION-win-x64.exe"
+
+      - name: List published files
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Get-ChildItem -LiteralPath 'publish' -Recurse -Force |
+            Select-Object FullName, Length |
+            Format-Table -AutoSize
 
       - name: Smoke test published executable
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $exe = (Resolve-Path -LiteralPath 'publish/GamePivot.exe').Path
+          $runDir = Split-Path -Parent $exe
           $output = Join-Path $env:RUNNER_TEMP 'gamepivot-published-smoke.json'
-          Remove-Item -LiteralPath $output -ErrorAction SilentlyContinue
-          $arguments = "--diagnose 393080 --output `"$output`""
-          $process = Start-Process -FilePath $exe -ArgumentList $arguments -Wait -PassThru
-          if ($process.ExitCode -ne 1) { throw "Published CLI exited with $($process.ExitCode); expected 1." }
-          if (-not (Test-Path -LiteralPath $output -PathType Leaf)) { throw 'Published CLI did not write its report.' }
-          $report = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
-          if ($report.type -cne 'InvalidOperationException' -or $report.error -cne 'Steam app 393080 is not installed.') {
-            throw 'Published CLI report did not match the missing-Steam result.'
+          $stdout = Join-Path $env:RUNNER_TEMP 'gamepivot-published-stdout.txt'
+          $stderr = Join-Path $env:RUNNER_TEMP 'gamepivot-published-stderr.txt'
+          Remove-Item -LiteralPath $output, $stdout, $stderr -ErrorAction SilentlyContinue
+          $process = $null
+          try {
+            $arguments = "--diagnose 393080 --output `"$output`""
+            $process = Start-Process -FilePath $exe -ArgumentList $arguments -WorkingDirectory $runDir -RedirectStandardOutput $stdout -RedirectStandardError $stderr -Wait -PassThru
+            if ($process.ExitCode -ne 1) { throw "Published CLI exited with $($process.ExitCode); expected 1." }
+            if (-not (Test-Path -LiteralPath $output -PathType Leaf)) { throw 'Published CLI did not write its report.' }
+            $report = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
+            if ($report.type -cne 'InvalidOperationException' -or $report.error -cne 'Steam app 393080 is not installed.') {
+              throw 'Published CLI report did not match the missing-Steam result.'
+            }
+          }
+          catch {
+            if ($null -eq $process) { Write-Host 'Published CLI exit code: process did not start' }
+            else { Write-Host "Published CLI exit code: $($process.ExitCode)" }
+            Write-Host 'Published CLI stdout:'
+            if (Test-Path -LiteralPath $stdout -PathType Leaf) { Get-Content -LiteralPath $stdout -Raw -ErrorAction Continue | Write-Host }
+            else { Write-Host '(stdout file missing)' }
+            Write-Host 'Published CLI stderr:'
+            if (Test-Path -LiteralPath $stderr -PathType Leaf) { Get-Content -LiteralPath $stderr -Raw -ErrorAction Continue | Write-Host }
+            else { Write-Host '(stderr file missing)' }
+            Write-Host "Recursive listing of ${runDir}:"
+            Get-ChildItem -LiteralPath $runDir -Recurse -Force -ErrorAction Continue | ForEach-Object { Write-Host ($_.FullName) }
+            throw
           }
 
       - name: Compile Inno Setup installer
@@ -82,6 +107,7 @@ jobs:
             if (-not (Test-Path -LiteralPath $defaultIscc -PathType Leaf)) { throw 'ISCC.exe was not found after installation.' }
             $iscc = $defaultIscc
           }
+          New-Item -ItemType Directory -Path 'dist' -Force | Out-Null
           & $iscc "/DAppVersion=$env:APP_VERSION" 'installer/GamePivot.iss'
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE." }
           if (-not (Test-Path -LiteralPath "dist/GamePivot-Setup-$env:APP_VERSION.exe" -PathType Leaf)) {
@@ -94,37 +120,60 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $setup = (Resolve-Path -LiteralPath "dist/GamePivot-Setup-$env:APP_VERSION.exe").Path
           $installDir = Join-Path $env:LOCALAPPDATA 'Programs/GamePivot'
-          $install = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /CURRENTUSER /NORESTART' -Wait -PassThru
-          if ($install.ExitCode -ne 0) { throw "Installer exited with $($install.ExitCode)." }
           $exe = Join-Path $installDir 'GamePivot.exe'
-          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Installed executable is missing.' }
-          if (-not (Test-Path -LiteralPath (Join-Path $installDir 'rules.json') -PathType Leaf)) { throw 'Installed rules.json is missing.' }
           $output = Join-Path $env:RUNNER_TEMP 'gamepivot-installed-smoke.json'
-          Remove-Item -LiteralPath $output -ErrorAction SilentlyContinue
-          $arguments = "--diagnose 393080 --output `"$output`""
-          $process = Start-Process -FilePath $exe -ArgumentList $arguments -Wait -PassThru
-          if ($process.ExitCode -ne 1) { throw "Installed CLI exited with $($process.ExitCode); expected 1." }
-          if (-not (Test-Path -LiteralPath $output -PathType Leaf)) { throw 'Installed CLI did not write its report.' }
-          $report = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
-          if ($report.type -cne 'InvalidOperationException' -or $report.error -cne 'Steam app 393080 is not installed.') {
-            throw 'Installed CLI report did not match the missing-Steam result.'
+          $stdout = Join-Path $env:RUNNER_TEMP 'gamepivot-installed-stdout.txt'
+          $stderr = Join-Path $env:RUNNER_TEMP 'gamepivot-installed-stderr.txt'
+          Remove-Item -LiteralPath $output, $stdout, $stderr -ErrorAction SilentlyContinue
+          $install = $null
+          $process = $null
+          $uninstall = $null
+          try {
+            $install = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /CURRENTUSER /NORESTART' -Wait -PassThru
+            if ($install.ExitCode -ne 0) { throw "Installer exited with $($install.ExitCode)." }
+            if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Installed executable is missing.' }
+            if (-not (Test-Path -LiteralPath (Join-Path $installDir 'rules.json') -PathType Leaf)) { throw 'Installed rules.json is missing.' }
+            $arguments = "--diagnose 393080 --output `"$output`""
+            $process = Start-Process -FilePath $exe -ArgumentList $arguments -WorkingDirectory $installDir -RedirectStandardOutput $stdout -RedirectStandardError $stderr -Wait -PassThru
+            if ($process.ExitCode -ne 1) { throw "Installed CLI exited with $($process.ExitCode); expected 1." }
+            if (-not (Test-Path -LiteralPath $output -PathType Leaf)) { throw 'Installed CLI did not write its report.' }
+            $report = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
+            if ($report.type -cne 'InvalidOperationException' -or $report.error -cne 'Steam app 393080 is not installed.') {
+              throw 'Installed CLI report did not match the missing-Steam result.'
+            }
+            $uninstaller = Join-Path $installDir 'unins000.exe'
+            if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) { throw 'Uninstaller is missing.' }
+            $uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Wait -PassThru
+            if ($uninstall.ExitCode -ne 0) { throw "Uninstaller exited with $($uninstall.ExitCode)." }
+            for ($attempt = 0; $attempt -lt 30 -and (Test-Path -LiteralPath $installDir); $attempt++) {
+              Start-Sleep -Seconds 1
+            }
+            if (Test-Path -LiteralPath $installDir) { throw 'Installation folder remains after uninstall.' }
           }
-          $uninstaller = Join-Path $installDir 'unins000.exe'
-          if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) { throw 'Uninstaller is missing.' }
-          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Wait -PassThru
-          if ($uninstall.ExitCode -ne 0) { throw "Uninstaller exited with $($uninstall.ExitCode)." }
-          for ($attempt = 0; $attempt -lt 30 -and (Test-Path -LiteralPath $installDir); $attempt++) {
-            Start-Sleep -Seconds 1
+          catch {
+            if ($null -ne $install) { Write-Host "Installer exit code: $($install.ExitCode)" }
+            if ($null -eq $process) { Write-Host 'Installed CLI exit code: process did not start' }
+            else { Write-Host "Installed CLI exit code: $($process.ExitCode)" }
+            if ($null -ne $uninstall) { Write-Host "Uninstaller exit code: $($uninstall.ExitCode)" }
+            Write-Host 'Installed CLI stdout:'
+            if (Test-Path -LiteralPath $stdout -PathType Leaf) { Get-Content -LiteralPath $stdout -Raw -ErrorAction Continue | Write-Host }
+            else { Write-Host '(stdout file missing)' }
+            Write-Host 'Installed CLI stderr:'
+            if (Test-Path -LiteralPath $stderr -PathType Leaf) { Get-Content -LiteralPath $stderr -Raw -ErrorAction Continue | Write-Host }
+            else { Write-Host '(stderr file missing)' }
+            Write-Host "Recursive listing of ${installDir}:"
+            if (Test-Path -LiteralPath $installDir -PathType Container) {
+              Get-ChildItem -LiteralPath $installDir -Recurse -Force -ErrorAction Continue | ForEach-Object { Write-Host ($_.FullName) }
+            }
+            else { Write-Host '(installation folder missing)' }
+            throw
           }
-          if (Test-Path -LiteralPath $installDir) { throw 'Installation folder remains after uninstall.' }
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: GamePivot-${{ env.APP_VERSION }}-windows
-          path: |
-            dist/GamePivot-Setup-${{ env.APP_VERSION }}.exe
-            dist/GamePivot-${{ env.APP_VERSION }}-win-x64.exe
+          path: dist/GamePivot-Setup-${{ env.APP_VERSION }}.exe
           if-no-files-found: error
 
       - name: Create GitHub release
@@ -146,5 +195,5 @@ jobs:
           $notes = @('GamePivot diagnoses and guides repairs for Steam games on Windows.', '', 'Highlights:') + ($features | Select-Object -First 4)
           $notesPath = Join-Path $env:RUNNER_TEMP 'gamepivot-release-notes.md'
           Set-Content -LiteralPath $notesPath -Value $notes -Encoding utf8
-          gh release create $env:GITHUB_REF_NAME "dist/GamePivot-Setup-$env:APP_VERSION.exe" "dist/GamePivot-$env:APP_VERSION-win-x64.exe" --title "GamePivot $env:APP_VERSION" --notes-file $notesPath
+          gh release create $env:GITHUB_REF_NAME "dist/GamePivot-Setup-$env:APP_VERSION.exe" --title "GamePivot $env:APP_VERSION" --notes-file $notesPath
           if ($LASTEXITCODE -ne 0) { throw "GitHub release creation failed with exit code $LASTEXITCODE." }

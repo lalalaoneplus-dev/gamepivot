@@ -4,7 +4,9 @@ GamePivot is a Windows diagnostic and guided-repair tool for older Steam games.
 
 ## Install
 
-Download [GamePivot-Setup](https://github.com/lalalaoneplus-dev/gamepivot/releases/latest) and run it on Windows.
+Download the [GamePivot installer](https://github.com/lalalaoneplus-dev/gamepivot/releases/latest),
+`GamePivot-Setup-<version>.exe`, and run it on Windows. The installer includes the app,
+its runtime files, and bundled rules.
 
 Features:
 
@@ -28,12 +30,6 @@ Headless diagnosis:
 
 ```powershell
 dotnet run -- --diagnose 393080 --output diagnosis.json
-```
-
-Publish a standalone Windows executable:
-
-```powershell
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
 
 ## Scope
